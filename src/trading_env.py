@@ -34,15 +34,21 @@ class ETFTradingEnv(gym.Env):
         data: pd.DataFrame,
         initial_cash: float = 100_000.0,
         transaction_cost: float = 0.001425,
+        reward_mode: str = "equity_change",
+        trade_penalty: float = 0.0005,
         random_seed: int | None = None,
     ) -> None:
         super().__init__()
         if data.empty:
             raise ValueError("ETFTradingEnv requires non-empty data.")
+        if reward_mode not in {"equity_change", "cost_penalty"}:
+            raise ValueError("reward_mode must be 'equity_change' or 'cost_penalty'.")
 
         self.data = data.sort_values("Date").reset_index(drop=True).copy()
         self.initial_cash = float(initial_cash)
         self.transaction_cost = float(transaction_cost)
+        self.reward_mode = reward_mode
+        self.trade_penalty = float(trade_penalty)
         self.action_space = spaces.Discrete(3)
         self.observation_space = spaces.Box(
             low=-np.inf,
@@ -81,6 +87,7 @@ class ETFTradingEnv(gym.Env):
         price = self._current_price()
         self.prev_net_worth = self._calculate_net_worth(price)
         executed_action = "Hold"
+        trade_executed = False
 
         if action == 1 and self.position == 0:
             cost_multiplier = 1.0 + self.transaction_cost
@@ -88,12 +95,14 @@ class ETFTradingEnv(gym.Env):
             self.cash = 0.0
             self.position = 1
             executed_action = "Buy"
+            trade_executed = True
             self._record_trade(executed_action, price)
         elif action == 2 and self.position == 1:
             self.cash = self.shares * price * (1.0 - self.transaction_cost)
             self.shares = 0.0
             self.position = 0
             executed_action = "Sell"
+            trade_executed = True
             self._record_trade(executed_action, price)
 
         self.current_step += 1
@@ -102,7 +111,7 @@ class ETFTradingEnv(gym.Env):
 
         new_price = self._current_price()
         self.net_worth = self._calculate_net_worth(new_price)
-        reward = (self.net_worth - self.prev_net_worth) / max(self.prev_net_worth, 1e-8)
+        reward = self._calculate_reward(trade_executed)
         self.equity_curve.append(self._equity_record(action=action, reward=reward))
 
         return self._get_observation(), float(reward), terminated, truncated, self._get_info()
@@ -138,6 +147,7 @@ class ETFTradingEnv(gym.Env):
             "shares": self.shares,
             "position": self.position,
             "net_worth": self.net_worth,
+            "reward_mode": self.reward_mode,
             "trades": self.trades,
         }
 
@@ -146,6 +156,12 @@ class ETFTradingEnv(gym.Env):
 
     def _calculate_net_worth(self, price: float) -> float:
         return float(self.cash + self.shares * price)
+
+    def _calculate_reward(self, trade_executed: bool) -> float:
+        reward = (self.net_worth - self.prev_net_worth) / max(self.prev_net_worth, 1e-8)
+        if self.reward_mode == "cost_penalty" and trade_executed:
+            reward -= self.trade_penalty
+        return float(reward)
 
     def _record_trade(self, action_name: str, price: float) -> None:
         row = self.data.iloc[self.current_step]

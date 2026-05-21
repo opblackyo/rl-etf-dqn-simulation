@@ -23,6 +23,8 @@ rl-etf-dqn-simulation/
 │   ├── trading_env.py
 │   ├── train_dqn.py
 │   ├── backtest.py
+│   ├── run_seed_experiment.py
+│   ├── run_reward_experiment.py
 │   └── metrics.py
 ├── app.py
 ├── requirements.txt
@@ -48,6 +50,8 @@ python -m src.data_loader
 python -m src.feature_engineering
 python -m src.train_dqn
 python -m src.backtest
+python -m src.run_seed_experiment
+python -m src.run_reward_experiment
 streamlit run app.py
 ```
 
@@ -71,6 +75,8 @@ reports/buy_hold_equity_curve.csv
 reports/random_equity_curve.csv
 reports/trades.csv
 reports/performance_summary.csv
+reports/seed_experiment_summary.csv
+reports/reward_experiment_summary.csv
 ```
 
 Streamlit Dashboard 會展示：
@@ -80,7 +86,31 @@ Streamlit Dashboard 會展示：
 - DQN、Buy and Hold、Random Policy 淨值曲線
 - DQN 訓練 reward 曲線
 - 策略績效表格
+- 多 seed 實驗表格
+- reward function 比較表格
 - 專題免責聲明
+
+## 研究完整度實驗
+
+本專案新增兩個研究完整度實驗，目的是觀察模型訓練結果的穩定性與 reward function 設計的影響，不是為了調整出更好的投資績效。
+
+多 seed 實驗：
+
+```bash
+python -m src.run_seed_experiment
+```
+
+此實驗使用相同 80% train / 20% test 時間序列切分，分別以 `42`、`123`、`999` 三個 random seed 訓練 DQN，並將測試集回測結果輸出到 `reports/seed_experiment_summary.csv`。這可以用來觀察 DQN 在不同隨機初始化與探索過程下，結果是否穩定。
+
+reward function 比較：
+
+```bash
+python -m src.run_reward_experiment
+```
+
+此實驗比較 `equity_change` 與 `cost_penalty` 兩種 reward mode。`equity_change` 使用前後資產淨值變化率，`cost_penalty` 則在發生 Buy / Sell 時額外加入小懲罰。結果會輸出到 `reports/reward_experiment_summary.csv`，可用來觀察 reward function 對交易行為與回測結果的影響。
+
+以上實驗仍然只使用歷史資料進行模擬，不涉及真實下單、券商 API 或即時行情，也不構成投資建議。
 
 ## 學習重點
 
@@ -89,6 +119,8 @@ Streamlit Dashboard 會展示：
 - 依照 Gymnasium Env API 實作自訂交易模擬環境。
 - 使用 Stable-Baselines3 DQN 訓練離散動作策略。
 - 建立 Buy and Hold 與 Random Policy baseline，避免只看單一模型結果。
+- 透過多 seed 實驗觀察 DQN 訓練結果是否穩定。
+- 透過 reward function 比較理解 reward 設計會影響 agent 行為。
 - 使用 Streamlit 與 Plotly 製作互動式成果展示頁面。
 - 從回測結果反思模型限制，而不是宣稱模型可以穩定獲利。
 

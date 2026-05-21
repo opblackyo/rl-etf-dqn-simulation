@@ -20,6 +20,19 @@ FEATURE_PATH = PROJECT_ROOT / "data" / "0050_features.csv"
 MODEL_PATH = PROJECT_ROOT / "models" / "dqn_0050.zip"
 REWARD_PATH = PROJECT_ROOT / "reports" / "training_rewards.csv"
 SEED = 42
+TOTAL_TIMESTEPS = 20_000
+DQN_PARAMS = {
+    "learning_rate": 1e-4,
+    "buffer_size": 50_000,
+    "learning_starts": 1_000,
+    "batch_size": 32,
+    "gamma": 0.99,
+    "train_freq": 4,
+    "target_update_interval": 1_000,
+    "exploration_fraction": 0.2,
+    "exploration_final_eps": 0.05,
+    "verbose": 1,
+}
 
 
 class RewardLoggerCallback(BaseCallback):
@@ -47,30 +60,29 @@ def load_train_data(feature_path: Path = FEATURE_PATH) -> pd.DataFrame:
     return train_df
 
 
-def train_dqn(total_timesteps: int = 20_000) -> DQN:
-    random.seed(SEED)
-    np.random.seed(SEED)
-    set_random_seed(SEED)
+def set_all_seeds(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+    set_random_seed(seed)
+
+
+def create_dqn_model(env: Monitor, seed: int) -> DQN:
+    return DQN(
+        "MlpPolicy",
+        env,
+        seed=seed,
+        **DQN_PARAMS,
+    )
+
+
+def train_dqn(total_timesteps: int = TOTAL_TIMESTEPS) -> DQN:
+    set_all_seeds(SEED)
 
     train_df = load_train_data()
     env = Monitor(ETFTradingEnv(train_df, random_seed=SEED))
     callback = RewardLoggerCallback()
 
-    model = DQN(
-        "MlpPolicy",
-        env,
-        learning_rate=1e-4,
-        buffer_size=50_000,
-        learning_starts=1_000,
-        batch_size=32,
-        gamma=0.99,
-        train_freq=4,
-        target_update_interval=1_000,
-        exploration_fraction=0.2,
-        exploration_final_eps=0.05,
-        seed=SEED,
-        verbose=1,
-    )
+    model = create_dqn_model(env, SEED)
     model.learn(total_timesteps=total_timesteps, callback=callback)
 
     MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)

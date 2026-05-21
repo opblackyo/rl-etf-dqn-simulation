@@ -22,6 +22,8 @@ BUY_HOLD_EQUITY_PATH = REPORT_DIR / "buy_hold_equity_curve.csv"
 RANDOM_EQUITY_PATH = REPORT_DIR / "random_equity_curve.csv"
 TRADES_PATH = REPORT_DIR / "trades.csv"
 SUMMARY_PATH = REPORT_DIR / "performance_summary.csv"
+SEED_EXPERIMENT_PATH = REPORT_DIR / "seed_experiment_summary.csv"
+REWARD_EXPERIMENT_PATH = REPORT_DIR / "reward_experiment_summary.csv"
 
 
 st.set_page_config(
@@ -54,7 +56,20 @@ def show_missing_file_warning() -> bool:
     return False
 
 
-def plot_price(daily_df: pd.DataFrame) -> go.Figure:
+def get_split_info(feature_df: pd.DataFrame) -> dict[str, pd.Timestamp]:
+    split_index = int(len(feature_df) * 0.8)
+    train_df = feature_df.iloc[:split_index]
+    test_df = feature_df.iloc[split_index:]
+    return {
+        "train_start": train_df["Date"].min(),
+        "train_end": train_df["Date"].max(),
+        "test_start": test_df["Date"].min(),
+        "test_end": test_df["Date"].max(),
+        "split_date": test_df["Date"].min(),
+    }
+
+
+def plot_price(daily_df: pd.DataFrame, split_date: pd.Timestamp | None = None) -> go.Figure:
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
@@ -65,6 +80,14 @@ def plot_price(daily_df: pd.DataFrame) -> go.Figure:
             line=dict(color="#2563eb", width=2),
         )
     )
+    if split_date is not None:
+        fig.add_vline(
+            x=split_date,
+            line_dash="dash",
+            line_color="#dc2626",
+            annotation_text="Test start",
+            annotation_position="top",
+        )
     fig.update_layout(
         title="0050 價格走勢",
         xaxis_title="Date",
@@ -73,6 +96,24 @@ def plot_price(daily_df: pd.DataFrame) -> go.Figure:
         margin=dict(l=20, r=20, t=60, b=20),
     )
     return fig
+
+
+def show_split_info(feature_df: pd.DataFrame) -> dict[str, pd.Timestamp]:
+    split_info = get_split_info(feature_df)
+    st.subheader("資料切分說明")
+    st.write("本專題採用時間序列切分，前 80% 作為 DQN 訓練資料，後 20% 作為測試與回測資料。")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric(
+            "Train period",
+            f"{split_info['train_start'].date()} ~ {split_info['train_end'].date()}",
+        )
+    with col2:
+        st.metric(
+            "Test period",
+            f"{split_info['test_start'].date()} ~ {split_info['test_end'].date()}",
+        )
+    return split_info
 
 
 def plot_equity_curves(dqn_df: pd.DataFrame, buy_hold_df: pd.DataFrame, random_df: pd.DataFrame) -> go.Figure:
@@ -177,10 +218,16 @@ st.title("強化學習於台股 ETF 交易決策模擬與視覺化系統")
 st.info("本專案僅作為強化學習與金融資料分析的自發學習成果，不涉及真實下單，也不構成任何投資建議。")
 
 has_missing_files = show_missing_file_warning()
+split_info = None
+
+if FEATURE_PATH.exists():
+    features = read_csv(FEATURE_PATH)
+    split_info = show_split_info(features)
 
 if DAILY_PATH.exists():
     daily = read_csv(DAILY_PATH)
-    st.plotly_chart(plot_price(daily), use_container_width=True)
+    split_date = split_info["split_date"] if split_info is not None else None
+    st.plotly_chart(plot_price(daily, split_date), use_container_width=True)
 
 if not has_missing_files:
     dqn_equity = read_csv(DQN_EQUITY_PATH)
@@ -200,3 +247,15 @@ if not has_missing_files:
 
     st.subheader("績效表格")
     st.dataframe(format_summary(summary), use_container_width=True, hide_index=True)
+
+if SEED_EXPERIMENT_PATH.exists():
+    st.subheader("多 Seed 實驗")
+    st.write("多 seed 實驗用來觀察 DQN 結果穩定性；不同 random seed 可能造成訓練路徑與交易結果不同。")
+    seed_summary = pd.read_csv(SEED_EXPERIMENT_PATH)
+    st.dataframe(format_summary(seed_summary), use_container_width=True, hide_index=True)
+
+if REWARD_EXPERIMENT_PATH.exists():
+    st.subheader("Reward Function 比較")
+    st.write("reward 比較用來觀察 reward function 對交易行為的影響，結果只代表歷史資料模擬，不代表投資建議。")
+    reward_summary = pd.read_csv(REWARD_EXPERIMENT_PATH)
+    st.dataframe(format_summary(reward_summary), use_container_width=True, hide_index=True)
